@@ -1,0 +1,2 @@
+# StockGenius
+Academic project
