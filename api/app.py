@@ -4,13 +4,14 @@ from flask_sqlalchemy import SQLAlchemy
 from models import db, User, Product, Category, Zone, Inventory, Sensor, SensorData, Alert, Order, OrderPrediction
 from datetime import datetime
 from functools import wraps
-from flask_jwt_extended import verify_jwt_in_request, get_jwt
+from flask_jwt_extended import verify_jwt_in_request, get_jwt 
 from flask_cors import CORS
 
 # login
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import timedelta
 from werkzeug.security import generate_password_hash
+from flask_jwt_extended import verify_jwt_in_request, get_jwt
 
 # Initialisation de l'application
 app = Flask(__name__)
