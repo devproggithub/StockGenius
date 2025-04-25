@@ -1,7 +1,7 @@
 # StockGenius
 Academic project
 ## Arborescence proposée
-your_project/
+/*your_project/
 ├── app.py
 ├── config.py
 ├── models/
@@ -10,4 +10,4 @@ your_project/
 │   ├── orders.py
 │   └── predictions.py
 ├── __init__.py
-└── requirements.txt
+└── requirements.txt*/
