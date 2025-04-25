@@ -207,6 +207,73 @@ def create_user():
         }
     }), 201
 
+# ---------------------- ROUTES POUR CLIENTS ----------------------
+
+# Obtenir tous les clients
+@app.route('/api/customers', methods=['GET'])
+@jwt_required()
+def get_customers():
+    customers = Customer.query.all()
+    result = []
+    for customer in customers:
+        result.append({
+            'id': customer.id,
+            'name': customer.name,
+            'email': customer.email,
+            'phone': customer.phone,
+            'address': customer.address
+        })
+    return jsonify(result), 200
+
+# Créer un client
+@app.route('/api/customers', methods=['POST'])
+@jwt_required()
+def create_customer():
+    data = request.get_json()
+    if not data.get('name') or not data.get('email'):
+        return jsonify({'error': 'Le nom et l\'email sont obligatoires'}), 400
+
+    if Customer.query.filter_by(email=data['email']).first():
+        return jsonify({'error': 'Un client avec cet email existe déjà'}), 409
+
+    new_customer = Customer(
+        name=data['name'],
+        email=data['email'],
+        phone=data.get('phone'),
+        address=data.get('address')
+    )
+    db.session.add(new_customer)
+    db.session.commit()
+    return jsonify({'message': 'Client créé avec succès'}), 201
+
+# Modifier un client
+@app.route('/api/customers/<int:customer_id>', methods=['PUT'])
+@jwt_required()
+def update_customer(customer_id):
+    customer = Customer.query.get(customer_id)
+    if not customer:
+        return jsonify({'error': 'Client non trouvé'}), 404
+
+    data = request.get_json()
+    customer.name = data.get('name', customer.name)
+    customer.email = data.get('email', customer.email)
+    customer.phone = data.get('phone', customer.phone)
+    customer.address = data.get('address', customer.address)
+    db.session.commit()
+    return jsonify({'message': 'Client mis à jour avec succès'}), 200
+
+# Supprimer un client
+@app.route('/api/customers/<int:customer_id>', methods=['DELETE'])
+@jwt_required()
+def delete_customer(customer_id):
+    customer = Customer.query.get(customer_id)
+    if not customer:
+        return jsonify({'error': 'Client non trouvé'}), 404
+    db.session.delete(customer)
+    db.session.commit()
+    return jsonify({'message': 'Client supprimé avec succès'}), 200
+
+
 
 # Routes pour les produits
 @app.route('/api/products', methods=['GET'])
