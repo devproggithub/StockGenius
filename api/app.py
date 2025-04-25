@@ -274,6 +274,85 @@ def delete_customer(customer_id):
     return jsonify({'message': 'Client supprimé avec succès'}), 200
 
 
+# GET all orders
+@app.route('/api/orders', methods=['GET'])
+@jwt_required()
+def get_orders():
+    orders = Order.query.all()
+    result = []
+    for order in orders:
+        result.append({
+            'id': order.id,
+            'customer_name': order.customer_name,
+            'status': order.status,
+            'created_at': order.created_at,
+            'updated_at': order.updated_at
+        })
+    return jsonify(result), 200
+
+
+# GET one order by ID
+@app.route('/api/orders/<int:order_id>', methods=['GET'])
+@jwt_required()
+def get_order(order_id):
+    order = Order.query.get(order_id)
+    if not order:
+        return jsonify({'error': 'Commande non trouvée'}), 404
+    return jsonify({
+        'id': order.id,
+        'customer_name': order.customer_name,
+        'status': order.status,
+        'created_at': order.created_at,
+        'updated_at': order.updated_at
+    }), 200
+
+
+# CREATE new order
+@app.route('/api/orders', methods=['POST'])
+@jwt_required()
+def create_order():
+    data = request.get_json()
+    if not data or 'customer_name' not in data:
+        return jsonify({'error': 'Le nom du client est requis'}), 400
+
+    new_order = Order(
+        customer_name=data['customer_name'],
+        status=data.get('status', 'en attente')
+    )
+    db.session.add(new_order)
+    db.session.commit()
+    return jsonify({'message': 'Commande créée avec succès', 'order_id': new_order.id}), 201
+
+
+# UPDATE an order
+@app.route('/api/orders/<int:order_id>', methods=['PUT'])
+@jwt_required()
+def update_order(order_id):
+    order = Order.query.get(order_id)
+    if not order:
+        return jsonify({'error': 'Commande non trouvée'}), 404
+
+    data = request.get_json()
+    order.customer_name = data.get('customer_name', order.customer_name)
+    order.status = data.get('status', order.status)
+
+    db.session.commit()
+    return jsonify({'message': 'Commande mise à jour avec succès'}), 200
+
+
+# DELETE an order
+@app.route('/api/orders/<int:order_id>', methods=['DELETE'])
+@jwt_required()
+def delete_order(order_id):
+    order = Order.query.get(order_id)
+    if not order:
+        return jsonify({'error': 'Commande non trouvée'}), 404
+
+    db.session.delete(order)
+    db.session.commit()
+    return jsonify({'message': 'Commande supprimée avec succès'}), 200
+
+
 
 # Routes pour les produits
 @app.route('/api/products', methods=['GET'])
