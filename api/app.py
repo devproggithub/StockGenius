@@ -1,11 +1,13 @@
 # app.py
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from api.routes import orders
 from models import db, User, Product, Category, Zone, Inventory, Sensor, SensorData, Alert, Order, OrderPrediction
 from datetime import datetime
 from functools import wraps
 from flask_jwt_extended import verify_jwt_in_request, get_jwt 
 from flask_cors import CORS
+from routes.orders import orders_bp
 
 # login
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -290,6 +292,9 @@ def get_orders():
         })
     return jsonify(result), 200
 
+
+
+app.register_blueprint(orders)
 
 # GET one order by ID
 @app.route('/api/orders/<int:order_id>', methods=['GET'])

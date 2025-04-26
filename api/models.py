@@ -19,13 +19,16 @@ class Customer(db.Model):
         return f'<Customer {self.name}>'
     
   
-
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    customer_name = db.Column(db.String(100), nullable=False)
-    status = db.Column(db.String(50), default='en attente')  # ou "pending"
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(50), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('orders', lazy=True))
+    product = db.relationship('Product', backref=db.backref('orders', lazy=True))
 
 
 class User(db.Model):
