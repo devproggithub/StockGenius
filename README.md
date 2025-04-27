@@ -1,7 +1,3 @@
-Bien sûr ! Voici un **README.md** prêt et bien structuré pour ton projet **StockGenius** :
-
----
-
 # 📦 StockGenius
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)  
