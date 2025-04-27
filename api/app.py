@@ -2,7 +2,7 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from api.routes import orders
-from models import db, User, Product, Category, Zone, Inventory, Sensor, SensorData, Alert, Order, OrderPrediction
+from models import db, User, Product, Category, Zone, Inventory, Sensor, SensorData, Alert, Order, OrderPrediction,Customer
 from datetime import datetime
 from functools import wraps
 from flask_jwt_extended import verify_jwt_in_request, get_jwt 
