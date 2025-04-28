@@ -2,13 +2,14 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-from . import db
+
 
 
 # Initialisation de SQLAlchemy
 db = SQLAlchemy()
 
 class Customer(db.Model):
+    __tablename__ = 'customers'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -19,17 +20,6 @@ class Customer(db.Model):
         return f'<Customer {self.name}>'
     
   
-class Order(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    quantity = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(50), default='pending')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    user = db.relationship('User', backref=db.backref('orders', lazy=True))
-    product = db.relationship('Product', backref=db.backref('orders', lazy=True))
-
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -171,7 +161,10 @@ class Order(db.Model):
     delivered_at = db.Column(db.DateTime)
     returned_at = db.Column(db.DateTime)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # L'utilisateur qui a créé la commande
-    
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)  # Nouveau champ
+    # Relations SQLAlchemy
+    customer = db.relationship('Customer', backref=db.backref('orders', lazy=True))  # Relation avec Customer
+   
     def __repr__(self):
         return f'<Order {self.id} product_id={self.product_id}>'
 

@@ -1,19 +1,18 @@
 # app.py
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from api.routes import orders
-from models import db, User, Product, Category, Zone, Inventory, Sensor, SensorData, Alert, Order, OrderPrediction,Customer
+from models import db, User, Product, Category, Zone, Inventory, Sensor, SensorData,Customer, Alert, Order, OrderPrediction
 from datetime import datetime
 from functools import wraps
 from flask_jwt_extended import verify_jwt_in_request, get_jwt 
 from flask_cors import CORS
-from routes.orders import orders_bp
-
 # login
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import timedelta
 from werkzeug.security import generate_password_hash
 from flask_jwt_extended import verify_jwt_in_request, get_jwt
+from generate_alerts import generate_all_alerts  
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Initialisation de l'application
 app = Flask(__name__)
@@ -285,16 +284,17 @@ def get_orders():
     for order in orders:
         result.append({
             'id': order.id,
-            'customer_name': order.customer_name,
+            'customer_id': order.customer_id,
             'status': order.status,
             'created_at': order.created_at,
-            'updated_at': order.updated_at
+            'delivered_at': order.delivered_at,
+            'returned_at':order.returned_at,
+            'user_id':order.user_id,
+            'quantity':order.quantity,
+            'product_id':order.product_id
+            
         })
     return jsonify(result), 200
-
-
-
-app.register_blueprint(orders)
 
 # GET one order by ID
 @app.route('/api/orders/<int:order_id>', methods=['GET'])
@@ -305,30 +305,35 @@ def get_order(order_id):
         return jsonify({'error': 'Commande non trouvée'}), 404
     return jsonify({
         'id': order.id,
-        'customer_name': order.customer_name,
+        'customer_id': order.customer_id,
         'status': order.status,
         'created_at': order.created_at,
-        'updated_at': order.updated_at
+        'delivered_at': order.delivered_at,
+        'returned_at':order.returned_at,
+        'user_id':order.user_id,
+        'quantity':order.quantity,
+        'product_id':order.product_id
     }), 200
 
-
-# CREATE new order
 @app.route('/api/orders', methods=['POST'])
 @jwt_required()
 def create_order():
     data = request.get_json()
-    if not data or 'customer_name' not in data:
-        return jsonify({'error': 'Le nom du client est requis'}), 400
+    if not data or 'customer_id' not in data or 'product_id' not in data or 'quantity' not in data:
+        return jsonify({'error': 'customer_id, product_id et quantity sont requis'}), 400
+
+    user_id = get_jwt_identity()  # Si tu utilises JWT pour identifier l'utilisateur connecté
 
     new_order = Order(
-        customer_name=data['customer_name'],
-        status=data.get('status', 'en attente')
+        customer_id=data['customer_id'],
+        product_id=data['product_id'],
+        quantity=data['quantity'],
+        status=data.get('status', 'en attente'),
+        user_id=user_id
     )
     db.session.add(new_order)
     db.session.commit()
     return jsonify({'message': 'Commande créée avec succès', 'order_id': new_order.id}), 201
-
-
 # UPDATE an order
 @app.route('/api/orders/<int:order_id>', methods=['PUT'])
 @jwt_required()
@@ -338,9 +343,11 @@ def update_order(order_id):
         return jsonify({'error': 'Commande non trouvée'}), 404
 
     data = request.get_json()
-    order.customer_name = data.get('customer_name', order.customer_name)
     order.status = data.get('status', order.status)
-
+    order.quantity = data.get('quantity', order.quantity)
+    order.delivered_at = data.get('delivered_at', order.delivered_at)
+    order.returned_at = data.get('returned_at', order.returned_at)
+    # Tu peux aussi permettre de changer product_id ou customer_id si besoin
     db.session.commit()
     return jsonify({'message': 'Commande mise à jour avec succès'}), 200
 
@@ -353,9 +360,13 @@ def delete_order(order_id):
     if not order:
         return jsonify({'error': 'Commande non trouvée'}), 404
 
-    db.session.delete(order)
-    db.session.commit()
-    return jsonify({'message': 'Commande supprimée avec succès'}), 200
+    try:
+        db.session.delete(order)
+        db.session.commit()
+        return jsonify({'message': 'Commande supprimée avec succès'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Erreur lors de la suppression', 'details': str(e)}), 500
 
 
 
@@ -600,7 +611,48 @@ def create_inventory():
             }
         }), 201
 
+#alerte
+@app.route('/api/alerts/<int:alert_id>/resolve', methods=['POST'])
+@jwt_required()
+def resolve_alert(alert_id):
+    """
+    Route pour marquer une alerte comme résolue
+    """
+    # Récupérer l'alerte
+    alert = Alert.query.get(alert_id)
+    if not alert:
+        return jsonify({'error': 'Alerte non trouvée'}), 404
+    
+    # Mettre à jour le statut de l'alerte
+    alert.status = "résolu"
+    
+    # Enregistrer les modifications
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Alerte résolue avec succès',
+        'alert': {
+            'id': alert.id,
+            'type': alert.type,
+            'status': alert.status
+        }
+    }), 200
+# 👇 Démarrer le scheduler
+def start_scheduler():
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=generate_alerts_job, trigger="interval", minutes=7)#minutes
+    scheduler.start()
+
+# 👇 Wrapper pour exécuter les alertes dans le contexte Flask
+def generate_alerts_job():
+    with app.app_context():
+        generate_all_alerts()
+        print("✅ Alertes générées automatiquement")
+   
+
 # Lancement de l'application
 if __name__ == '__main__':
-    app.run(debug=True)
-
+     with app.app_context():
+        generate_all_alerts()  # Première exécution immédiate
+        start_scheduler()      # Démarrage du scheduler toutes les 7 secondes
+        app.run(debug=True)
