@@ -10,7 +10,6 @@ The platform provides a clean, user-friendly API structure that allows administr
 
 Thanks to its modular and scalable architecture, StockGenius is perfect for startups looking for rapid growth and established companies aiming to modernize their operations. Security and performance are core priorities, ensuring that your data is protected while delivering a smooth user experience.
 
-## ROU Test
 ---
 
 ## 🚀 Fonctionnalités principales
