@@ -13,11 +13,15 @@ from werkzeug.security import generate_password_hash
 from flask_jwt_extended import verify_jwt_in_request, get_jwt
 from generate_alerts import generate_all_alerts  
 from apscheduler.schedulers.background import BackgroundScheduler
+import serial
+import threading
+from flask import jsonify, request
+import time
 
 # Initialisation de l'application
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:4200"}})  # Remplacez par l'URL de votre frontend
-
+CORS(app, origins=["http://localhost:4200"], supports_credentials=True)
 
 # Configuration JWT après l'initialisation de l'application
 app.config['JWT_SECRET_KEY'] = 'KEY00155'  # Changez ceci en production!
@@ -649,10 +653,361 @@ def generate_alerts_job():
         generate_all_alerts()
         print("✅ Alertes générées automatiquement")
    
+#CODE ARDUINO /////////////////////////////////////////////////////////////////////
+# Configuration du port série Arduino (à ajuster selon votre configuration)
+SERIAL_PORT = 'COM13'  # Changez selon votre port Arduino
+BAUD_RATE = 9600
+arduino_serial = None
+
+# Fonction pour initialiser la connexion série avec Arduino
+def init_arduino_serial():
+    global arduino_serial
+    try:
+        arduino_serial = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        print(f"✅ Connexion établie avec Arduino sur {SERIAL_PORT}")
+        return True
+    except serial.SerialException as e:
+        print(f"❌ Erreur de connexion au port série: {e}")
+        return False
+
+# Fonction pour lire les données RFID en continu
+def read_rfid_data():
+    global arduino_serial
+    
+    while True:
+        try:
+            if arduino_serial and arduino_serial.is_open and arduino_serial.in_waiting:
+                # Lire une ligne depuis Arduino
+                data_str = arduino_serial.readline().decode('utf-8').strip()
+                
+                # Ignorer les lignes vides
+                if not data_str:
+                    continue
+                
+                print(f"📡 Données reçues: {data_str}")
+                
+                # Traiter les données RFID
+                try:
+                    import json
+                    
+                    # Essayer de parser en JSON si c'est au format JSON
+                    if data_str.startswith('{') and data_str.endswith('}'):
+                        data = json.loads(data_str)
+                        
+                        # Vérifier s'il y a un UID et des données supplémentaires
+                        if 'uid' in data and 'data' in data:
+                            uid = data['uid']
+                            card_data = data['data']
+                            
+                            print(f"✅ UID: {uid}")
+                            print(f"✅ Données de la carte: {card_data}")
+                            
+                            # Stocker dans la base de données
+                            with app.app_context():
+                                # Si card_data est un objet, le convertir en string limité à 255 caractères
+                                if isinstance(card_data, dict):
+                                    value_str = json.dumps(card_data)[:255]  # Limiter à 255 caractères
+                                else:
+                                    value_str = str(card_data)[:255]
+                                
+                                new_sensor_data = SensorData(
+                                    sensor_id=1,  # ID du capteur RFID
+                                    value=value_str
+                                )
+                                db.session.add(new_sensor_data)
+                                db.session.commit()
+                                
+                                # Si les données contiennent un ID produit, mettre à jour le produit
+                                if isinstance(card_data, dict) and ('product_id' in card_data or 'id' in card_data):
+                                    product_id = card_data.get('product_id', card_data.get('id'))
+                                   #update_product_with_rfid_data(product_id, card_data, uid)
+                        else:
+                            # Seulement UID
+                            print(f"⚠️ Seulement UID reçu: {data.get('uid', 'Non spécifié')}")
+                            # Stocker quand même l'UID
+                            with app.app_context():
+                                new_sensor_data = SensorData(
+                                    sensor_id=1,
+                                    value=f"UID: {data.get('uid', 'Non spécifié')}"[:255]
+                                )
+                                db.session.add(new_sensor_data)
+                                db.session.commit()
+                    else:
+                        # Format non-JSON, probablement juste un UID
+                        print(f"⚠️ Données non-JSON: {data_str}")
+                        with app.app_context():
+                            new_sensor_data = SensorData(
+                                sensor_id=1,
+                                value=data_str[:255]
+                            )
+                            db.session.add(new_sensor_data)
+                            db.session.commit()
+                
+                except json.JSONDecodeError as je:
+                    print(f"❌ Erreur de décodage JSON: {je}")
+                    # Stocker les données brutes
+                    with app.app_context():
+                        new_sensor_data = SensorData(
+                            sensor_id=1,
+                            value=data_str[:255]
+                        )
+                        db.session.add(new_sensor_data)
+                        db.session.commit()
+                except Exception as e:
+                    print(f"❌ Erreur de traitement des données: {e}")
+            
+            time.sleep(0.1)  # Pause pour éviter une utilisation CPU excessive
+            
+        except Exception as e:
+            print(f"❌ Erreur lors de la lecture RFID: {e}")
+            time.sleep(1)  # Attendre avant de réessayer
+
+# Fonction auxiliaire pour mettre à jour un produit avec les données RFID
+def update_product_with_rfid_data(product_id, card_data, uid):
+    try:
+        product = Product.query.get(product_id)
+        if product:
+            # Mettre à jour le produit avec les données de la carte
+            if 'name' in card_data:
+                product.designation = card_data['name']
+            if 'description' in card_data:
+                product.description = card_data['description']
+            # Ajouter d'autres champs selon vos besoins
+            
+            # Mettre à jour le tag RFID si ce n'est pas déjà fait
+            if not product.rfid_tag and uid:
+                product.rfid_tag = uid
+                
+            db.session.commit()
+            print(f"✅ Produit ID {product_id} mis à jour avec les données RFID")
+        else:
+            print(f"⚠️ Produit ID {product_id} non trouvé dans la base de données")
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur lors de la mise à jour du produit: {e}")
+""" def read_rfid_data():
+    global arduino_serial
+    
+    while True:
+        try:
+            if arduino_serial and arduino_serial.is_open and arduino_serial.in_waiting:
+                # Lire une ligne depuis Arduino
+                rfid_data = arduino_serial.readline().decode('utf-8').strip()
+                
+                # Ignorer les lignes qui ne sont pas des données RFID valides
+                # Par exemple, ignorer les lignes qui contiennent des instructions comme "w - Écrire"
+                if rfid_data and not rfid_data.startswith("r -") and not rfid_data.startswith("w -"):
+                    print(f"📡 Données RFID reçues: {rfid_data}")
+                    
+                    # Vérifier si c'est un UID RFID valide (généralement hexadécimal)
+                    import re
+                    if re.match(r'^[0-9A-F\s]+$', rfid_data.upper()):
+                        process_rfid_data({"uid": rfid_data.upper().replace(" ", "")})
+                    elif rfid_data.startswith("{") and rfid_data.endswith("}"):
+                        try:
+                            import json
+                            data = json.loads(rfid_data)
+                            process_rfid_data(data)
+                        except json.JSONDecodeError:
+                            print("❌ Format JSON invalide")
+                    else:
+                        print(f"⚠️ Ignorer les données non RFID: {rfid_data}")
+            
+            time.sleep(0.1)  # Pause pour éviter une utilisation CPU excessive
+            
+        except Exception as e:
+            print(f"❌ Erreur lors de la lecture RFID: {e}")
+            time.sleep(1)  # Attendre avant de réessayer """
+# Fonction pour traiter les données RFID
+def process_rfid_data(data):
+    with app.app_context():
+        uid = data.get("uid", "").upper()  # On récupère toujours l'UID pour l'authentification
+        card_data = data.get("data", None)
+        
+        # Si des données sont stockées sur la carte
+        if card_data:
+            try:
+                # Extraire uniquement les informations importantes
+                product_info = {
+                    'product_id': card_data.get('id'),
+                    'product_name': card_data.get('name'),
+                    'price': card_data.get('price'),
+                    'quantity': card_data.get('quantity', 0)
+                }
+                
+                print(f"✅ Informations du produit: {product_info}")
+                
+                # Enregistrer les données dans SensorData
+                # Utilisez le bon nom de champ pour l'horodatage dans votre modèle
+                new_sensor_data = SensorData(
+                    sensor_id=1,  # ID du capteur RFID
+                    value=str(product_info),
+                    # Si votre modèle a un champ 'created_at' au lieu de 'timestamp'
+                    # created_at=datetime.utcnow()
+                )
+                db.session.add(new_sensor_data)
+                db.session.commit()
+                
+                return product_info  # Retourner uniquement les infos du produit
+                
+            except Exception as e:
+                db.session.rollback()
+                print(f"❌ Erreur lors du traitement des données: {e}")
+                return None
+        
+        # Si pas de données sur la carte, on renvoie None
+        print("⚠️ Aucune donnée produit trouvée sur cette carte")
+        return None
+# Route pour démarrer la lecture RFID
+@app.route('/api/rfid/start', methods=['POST'])
+@jwt_required()
+@role_required(['admin'])  # Limiter aux administrateurs
+def start_rfid_reader():
+    """Démarrer la lecture RFID"""
+    global arduino_serial
+    
+    if arduino_serial and arduino_serial.is_open:
+        return jsonify({"message": "Le lecteur RFID est déjà démarré"}), 200
+    
+    if init_arduino_serial():
+        # Démarrer le thread de lecture RFID
+        rfid_thread = threading.Thread(target=read_rfid_data, daemon=True)
+        rfid_thread.start()
+        return jsonify({"message": "Lecteur RFID démarré avec succès"}), 200
+    else:
+        return jsonify({"error": "Impossible de se connecter au lecteur RFID"}), 500
+
+# Route pour arrêter la lecture RFID
+@app.route('/api/rfid/stop', methods=['POST'])
+@jwt_required()
+@role_required(['admin'])  # Limiter aux administrateurs
+def stop_rfid_reader():
+    """Arrêter la lecture RFID"""
+    global arduino_serial
+    
+    if arduino_serial and arduino_serial.is_open:
+        arduino_serial.close()
+        arduino_serial = None
+        return jsonify({"message": "Lecteur RFID arrêté avec succès"}), 200
+    else:
+        return jsonify({"message": "Le lecteur RFID n'était pas démarré"}), 200
+
+# Route pour obtenir les dernières lectures RFID
+@app.route('/api/rfid/readings', methods=['GET'])
+@jwt_required()
+def get_rfid_readings():
+    """Obtenir les dernières lectures RFID"""
+    # Nombre de lectures à récupérer (par défaut 10)
+    limit = request.args.get('limit', 10, type=int)
+    
+    # Récupérer les données du capteur RFID (sensor_id=1 pour RFID)
+    readings = SensorData.query.filter_by(sensor_id=1).order_by(SensorData.timestamp.desc()).limit(limit).all()
+    
+    result = []
+    for reading in readings:
+        data = {
+            'id': reading.id,
+            'value': reading.value,
+            'timestamp': reading.timestamp
+        }
+        
+        # Ajouter les informations sur le produit si disponible
+        if reading.product_id:
+            product = Product.query.get(reading.product_id)
+            if product:
+                data['product'] = {
+                    'id': product.id,
+                    'designation': product.designation,
+                    'category': product.category.name
+                }
+        
+        result.append(data)
+    
+    return jsonify(result), 200
+
+# Route pour associer une carte RFID à un produit
+@app.route('/api/products/<int:product_id>/assign-rfid', methods=['POST'])
+@jwt_required()
+@role_required(['admin', 'manager'])
+def assign_rfid_to_product(product_id):
+    """Associer une carte RFID à un produit"""
+    # Vérifier si le produit existe
+    product = Product.query.get(product_id)
+    if not product:
+        return jsonify({'error': 'Produit non trouvé'}), 404
+    
+    data = request.get_json()
+    if not data or 'rfid_tag' not in data:
+        return jsonify({'error': 'rfid_tag est requis'}), 400
+    
+    # Vérifier si le tag RFID est déjà utilisé par un autre produit
+    existing_product = Product.query.filter_by(rfid_tag=data['rfid_tag']).first()
+    if existing_product and existing_product.id != product_id:
+        return jsonify({'error': 'Ce tag RFID est déjà attribué à un autre produit'}), 409
+    
+    # Mettre à jour le produit
+    product.rfid_tag = data['rfid_tag']
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Tag RFID associé avec succès',
+        'product': {
+            'id': product.id,
+            'designation': product.designation,
+            'rfid_tag': product.rfid_tag
+        }
+    }), 200
+
+# Route pour associer une carte RFID à un utilisateur
+@app.route('/api/users/<int:user_id>/assign-rfid', methods=['POST'])
+@jwt_required()
+@role_required(['admin'])
+def assign_rfid_to_user(user_id):
+    """Associer une carte RFID à un utilisateur"""
+    # Vérifier si l'utilisateur existe
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'Utilisateur non trouvé'}), 404
+    
+    data = request.get_json()
+    if not data or 'rfid_card' not in data:
+        return jsonify({'error': 'rfid_card est requis'}), 400
+    
+    # Vérifier si la carte RFID est déjà utilisée par un autre utilisateur
+    existing_user = User.query.filter_by(rfid_card=data['rfid_card']).first()
+    if existing_user and existing_user.id != user_id:
+        return jsonify({'error': 'Cette carte RFID est déjà attribuée à un autre utilisateur'}), 409
+    
+    # Mettre à jour l'utilisateur
+    user.rfid_card = data['rfid_card']
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Carte RFID associée avec succès',
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'rfid_card': user.rfid_card
+        }
+    }), 200
+
+
+
+
+
+
+
 
 # Lancement de l'application
 if __name__ == '__main__':
      with app.app_context():
         generate_all_alerts()  # Première exécution immédiate
         start_scheduler()      # Démarrage du scheduler toutes les 7 secondes
+        # Initialiser le lecteur RFID
+        if init_arduino_serial():
+            rfid_thread = threading.Thread(target=read_rfid_data, daemon=True)
+            rfid_thread.start()
+            print("✅ Lecteur RFID démarré")
         app.run(debug=True)
+
+
