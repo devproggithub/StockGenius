@@ -10,7 +10,6 @@ The platform provides a clean, user-friendly API structure that allows administr
 
 Thanks to its modular and scalable architecture, StockGenius is perfect for startups looking for rapid growth and established companies aiming to modernize their operations. Security and performance are core priorities, ensuring that your data is protected while delivering a smooth user experience.
 
-## ROU Test
 ---
 
 ## 🚀 Fonctionnalités principales
@@ -28,25 +27,35 @@ Thanks to its modular and scalable architecture, StockGenius is perfect for star
 
 ```
 StockGenius/
-├── app.py
-├── config.py
-├── models/
-│   ├── __init__.py
-│   ├── product.py
-│   ├── order.py
-│   ├── user.py
-├── routes/
-│   ├── __init__.py
-│   ├── product_routes.py
-│   ├── order_routes.py
-│   ├── auth_routes.py
-├── migrations/
-├── requirements.txt
-├── README.md
-└── .env
+│
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── main.py
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py
+│   │   │   ├── user.py
+│   │   │   ├── product.py
+│   │   │   ├── order.py
+│   │   │   ├── order_prediction.py
+│   │   │   ├── alert.py
+│   │   │   ├── zone.py
+│   │   │   ├── inventory.py
+│   │   │   ├── sensor.py
+│   │   │   ├── sensor_data.py
+│   │   │   └── category.py
+│   │   ├── routes/
+│   │   │   ├── __init__.py
+│   │   │   ├── users.py
+│   │   │   ├── products.py
+│   │   │   ├── orders.py
+│   │   │   ├── alerts.py
+│   │   │   └── zones.py
+│   └── run.py
 ```
 
----
 
 ## ⚙️ Installation
 
