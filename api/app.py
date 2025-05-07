@@ -616,6 +616,127 @@ def create_inventory():
         }), 201
 
 #alerte
+# Route pour obtenir les alertes résolues
+@app.route('/api/alerts/resolved', methods=['GET'])
+@jwt_required()
+def get_resolved_alerts():
+    resolved_alerts = Alert.query.filter_by(status="résolu").all()
+    result = []
+    for alert in resolved_alerts:
+        # Récupérer les informations du produit associé
+        product_info = None
+        if alert.product_id:
+            product = Product.query.get(alert.product_id)
+            if product:
+                product_info = {
+                    'id': product.id,
+                    'designation': product.designation
+                }
+        
+        # Récupérer les informations de l'utilisateur associé
+        user_info = None
+        if alert.user_id:
+            user = User.query.get(alert.user_id)
+            if user:
+                user_info = {
+                    'id': user.id,
+                    'username': user.username
+                }
+        
+        result.append({
+            'id': alert.id,
+            'type': alert.type,
+            'status': alert.status,
+            'created_at': alert.created_at,
+            'product': product_info,
+            'user': user_info
+        })
+    
+    return jsonify(result), 200
+
+# Route pour obtenir les alertes non résolues
+@app.route('/api/alerts/unresolved', methods=['GET'])
+@jwt_required()
+def get_unresolved_alerts():
+    unresolved_alerts = Alert.query.filter(Alert.status != "résolu").all()
+    result = []
+    for alert in unresolved_alerts:
+        # Récupérer les informations du produit associé
+        product_info = None
+        if alert.product_id:
+            product = Product.query.get(alert.product_id)
+            if product:
+                product_info = {
+                    'id': product.id,
+                    'designation': product.designation
+                }
+        
+        # Récupérer les informations de l'utilisateur associé
+        user_info = None
+        if alert.user_id:
+            user = User.query.get(alert.user_id)
+            if user:
+                user_info = {
+                    'id': user.id,
+                    'username': user.username
+                }
+        
+        result.append({
+            'id': alert.id,
+            'type': alert.type,
+            'status': alert.status,
+            'created_at': alert.created_at,
+            'product': product_info,
+            'user': user_info
+        })
+    
+    return jsonify(result), 200
+
+# Route pour obtenir toutes les alertes avec filtrage par statut
+@app.route('/api/alerts', methods=['GET'])
+@jwt_required()
+def get_alerts():
+    # Récupérer le paramètre de requête 'status' s'il existe
+    status = request.args.get('status')
+    
+    # Construire la requête en fonction du paramètre
+    query = Alert.query
+    if status:
+        query = query.filter_by(status=status)
+    
+    alerts = query.all()
+    result = []
+    for alert in alerts:
+        # Récupérer les informations du produit associé
+        product_info = None
+        if alert.product_id:
+            product = Product.query.get(alert.product_id)
+            if product:
+                product_info = {
+                    'id': product.id,
+                    'designation': product.designation
+                }
+        
+        # Récupérer les informations de l'utilisateur associé
+        user_info = None
+        if alert.user_id:
+            user = User.query.get(alert.user_id)
+            if user:
+                user_info = {
+                    'id': user.id,
+                    'username': user.username
+                }
+        
+        result.append({
+            'id': alert.id,
+            'type': alert.type,
+            'status': alert.status,
+            'created_at': alert.created_at,
+            'product': product_info,
+            'user': user_info
+        })
+    
+    return jsonify(result), 200
 @app.route('/api/alerts/<int:alert_id>/resolve', methods=['POST'])
 @jwt_required()
 def resolve_alert(alert_id):
