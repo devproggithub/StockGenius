@@ -1112,9 +1112,47 @@ def assign_rfid_to_user(user_id):
         }
     }), 200
 
+@app.route('/api/rfid/data', methods=['POST'])
+def receive_rfid_data():
+    try:
+        # Récupérer les données
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "Données JSON manquantes"}), 400
+            
+        # Extraire les informations
+        uid = data.get('uid')
+        weight = data.get('weight', 0)
+        card_data = data.get('data', '')
+        
+        # Se connecter à la base de données
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        # Enregistrer les données
+        query = """
+        INSERT INTO sensor_data (sensor_id, value, weight, timestamp) 
+        VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(query, (1, card_data, weight, datetime.now()))
+        
+        # Valider et fermer la connexion
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "message": "Données RFID enregistrées avec succès",
+            "uid": uid,
+            "timestamp": datetime.now().isoformat()
+        }), 201
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-
-
+if __name__ == '_main_':
+    app.run(debug=True, host='0.0.0.0', port=5000)
 
 
 
