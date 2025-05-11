@@ -134,6 +134,7 @@ class SensorData(db.Model):
     value = db.Column(db.String(255), nullable=False)
     saved_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    
     def __repr__(self):
         return f'<SensorData {self.id} sensor_id={self.sensor_id}>'
 

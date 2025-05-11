@@ -20,8 +20,8 @@ import time
 
 # Initialisation de l'application
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:4200"}})  # Remplacez par l'URL de votre frontend
-CORS(app, origins=["http://localhost:4200"], supports_credentials=True)
+CORS(app, resources={r"/api/*": {"origins": "*"}})  # Remplacez par l'URL de votre frontend
+CORS(app, origins=["*"], supports_credentials=True)
 
 # Configuration JWT après l'initialisation de l'application
 app.config['JWT_SECRET_KEY'] = 'KEY00155'  # Changez ceci en production!
@@ -984,39 +984,7 @@ def update_product_with_rfid_data(product_id, card_data, uid):
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur lors de la mise à jour du produit: {e}")
-""" def read_rfid_data():
-    global arduino_serial
-    
-    while True:
-        try:
-            if arduino_serial and arduino_serial.is_open and arduino_serial.in_waiting:
-                # Lire une ligne depuis Arduino
-                rfid_data = arduino_serial.readline().decode('utf-8').strip()
-                
-                # Ignorer les lignes qui ne sont pas des données RFID valides
-                # Par exemple, ignorer les lignes qui contiennent des instructions comme "w - Écrire"
-                if rfid_data and not rfid_data.startswith("r -") and not rfid_data.startswith("w -"):
-                    print(f"📡 Données RFID reçues: {rfid_data}")
-                    
-                    # Vérifier si c'est un UID RFID valide (généralement hexadécimal)
-                    import re
-                    if re.match(r'^[0-9A-F\s]+$', rfid_data.upper()):
-                        process_rfid_data({"uid": rfid_data.upper().replace(" ", "")})
-                    elif rfid_data.startswith("{") and rfid_data.endswith("}"):
-                        try:
-                            import json
-                            data = json.loads(rfid_data)
-                            process_rfid_data(data)
-                        except json.JSONDecodeError:
-                            print("❌ Format JSON invalide")
-                    else:
-                        print(f"⚠️ Ignorer les données non RFID: {rfid_data}")
-            
-            time.sleep(0.1)  # Pause pour éviter une utilisation CPU excessive
-            
-        except Exception as e:
-            print(f"❌ Erreur lors de la lecture RFID: {e}")
-            time.sleep(1)  # Attendre avant de réessayer """
+
 # Fonction pour traiter les données RFID
 def process_rfid_data(data):
     with app.app_context():
@@ -1233,7 +1201,64 @@ if __name__ == '_main_':
     app.run(debug=True, host='0.0.0.0', port=5000)
 
 
+from flask import jsonify, Blueprint
 
+# Créer un Blueprint pour les API
+api_bp = Blueprint('api', __name__)
+
+@api_bp.route('/last_sensor_data', methods=['GET'])
+def get_last_sensor_data():
+    """
+    Endpoint API pour récupérer les dernières données de capteur contenant "0111:PEINTURE:0"
+    """
+    try:
+        # Récupérer la dernière entrée contenant "0111:PEINTURE:0"
+        last_data = SensorData.query.filter(
+            SensorData.value.like('%0111:PEINTURE:0%')
+        ).order_by(SensorData.saved_at.desc()).first()
+        
+        if last_data:
+            # Parser les données JSON de la colonne value
+            import json
+            try:
+                value_data = json.loads(last_data.value)
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'id': last_data.id,
+                        'value': value_data,
+                        'saved_at': last_data.saved_at.isoformat() if last_data.saved_at else None
+                    }
+                })
+            except json.JSONDecodeError:
+                return jsonify({
+                    'success': False,
+                    'error': 'Format de données incorrect',
+                    'raw_value': last_data.value
+                })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Aucune donnée trouvée'
+            })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+# Enregistrez ce Blueprint dans votre application principale
+# Dans votre app.py ou équivalent:
+# app.register_blueprint(api_bp, url_prefix='/api')
+# Enregistrement du blueprint avec un préfixe correct
+app.register_blueprint(api_bp, url_prefix='/api')
+
+# Ajoutez une route pour autoriser les requêtes OPTIONS sur toutes les routes API
+@app.route('/api/<path:path>', methods=['OPTIONS'])
+def handle_options(path):
+    return '', 200
 
 # Lancement de l'application
 if __name__ == '__main__':
