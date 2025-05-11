@@ -30,7 +30,7 @@ jwt = JWTManager(app)
 
 # Configuration de la base de données MySQL
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root@localhost/stock_genius'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 app.config['SECRET_KEY'] = 'KEY00155'  # Important pour la sécurité
 
 # Initialisation de la base de données avec l'application
@@ -791,9 +791,83 @@ def init_arduino_serial():
         print(f"❌ Erreur de connexion au port série: {e}")
         return False
 
+# Créer un client
+@app.route('/api/sensordata', methods=['POST'])
+@jwt_required()
+def create_sensortrace():
+    data = request.get_json()
+    if not data.get('uid') or not data.get('id') or not data.get('product'):
+        return jsonify({'error': 'Le id et le produit sont obligatoires'}), 400
+
+    if Customer.query.filter_by(produit=data['produit']).first():
+        return jsonify({'error': 'Un client avec cet email existe déjà'}), 409
+
+    new_sensordata = SensorData(
+        sensor_id = data['uid'],
+        value = data['data'],
+        saved_at = datetime.utcnow()
+    )
+    print(f"✅saavveedd {new_sensordata}")
+    db.session.add(new_sensordata)
+    db.session.commit()
+    return jsonify({'message': 'Client créé avec succès'}), 201
+
+# Fonction pour lire les données RFID en continu
 # Fonction pour lire les données RFID en continu
 def read_rfid_data():
     global arduino_serial
+    
+    while True:
+        try:
+            if arduino_serial and arduino_serial.is_open and arduino_serial.in_waiting:
+                # Lire une ligne depuis Arduino
+                data_str = arduino_serial.readline().decode('utf-8').strip()
+                
+                # Ignorer les lignes vides
+                if not data_str:
+                    continue
+                
+                print(f"📡 Données reçues: {data_str}")
+                
+                # Vérifier si les données contiennent "0111:PEINTURE:0"
+                if "0111:PEINTURE:0" in data_str:
+                    print(f"✅ Données correspondant au filtre trouvées: {data_str}")
+                    
+                    # Traiter les données RFID
+                    try:
+                        import json
+                        
+                        # Stocker dans la base de données
+                        with app.app_context():
+                            # Créer et ajouter une nouvelle entrée SensorData
+                            new_sensor_data = SensorData(
+                                value=data_str[:255]  # Limiter à 255 caractères
+                            )
+                            
+                            # Déboguer l'objet créé
+                            print(f"Objet SensorData créé: {new_sensor_data}")
+                            
+                            try:
+                                # Ajout explicite à la session
+                                db.session.add(new_sensor_data)
+                                # Commit explicite pour forcer la sauvegarde
+                                db.session.commit()
+                                print(f"✅ Données '0111:PEINTURE:0' sauvegardées avec succès! ID: {new_sensor_data.id if hasattr(new_sensor_data, 'id') else 'inconnu'}")
+                            except Exception as e:
+                                # Rollback en cas d'erreur
+                                db.session.rollback()
+                                print(f"❌ ERREUR de sauvegarde dans la base: {str(e)}")
+                                
+                    except Exception as e:
+                        print(f"❌ Erreur de traitement des données: {e}")
+                else:
+                    print(f"⏭️ Données ignorées car ne correspondent pas au filtre '0111:PEINTURE:0'")
+            
+            time.sleep(0.1)  # Pause pour éviter une utilisation CPU excessive
+            
+        except Exception as e:
+            print(f"❌ Erreur lors de la lecture RFID: {e}")
+            time.sleep(1)  # Attendre avant de réessayer
     
     while True:
         try:
@@ -816,6 +890,7 @@ def read_rfid_data():
                         data = json.loads(data_str)
                         
                         # Vérifier s'il y a un UID et des données supplémentaires
+                        # Vérifier s'il y a un UID et des données supplémentaires
                         if 'uid' in data and 'data' in data:
                             uid = data['uid']
                             card_data = data['data']
@@ -827,32 +902,35 @@ def read_rfid_data():
                             with app.app_context():
                                 # Si card_data est un objet, le convertir en string limité à 255 caractères
                                 if isinstance(card_data, dict):
+                                    print(card_data)  
                                     value_str = json.dumps(card_data)[:255]  # Limiter à 255 caractères
                                 else:
+                                    print(f"✅ Données de la carte elseeeee: {card_data}")
                                     value_str = str(card_data)[:255]
                                 
+                                # Déboguer avant la sauvegarde
+                                print(f"Type de value_str: {type(value_str)}, Contenu: {value_str}")
+                                
+                                # Créer et ajouter une nouvelle entrée SensorData
                                 new_sensor_data = SensorData(
-                                    sensor_id=1,  # ID du capteur RFID
+                                    #sensor_id=1,  # ID du capteur RFID
                                     value=value_str
                                 )
-                                db.session.add(new_sensor_data)
-                                db.session.commit()
                                 
-                                # Si les données contiennent un ID produit, mettre à jour le produit
-                                if isinstance(card_data, dict) and ('product_id' in card_data or 'id' in card_data):
-                                    product_id = card_data.get('product_id', card_data.get('id'))
-                                   #update_product_with_rfid_data(product_id, card_data, uid)
-                        else:
-                            # Seulement UID
-                            print(f"⚠️ Seulement UID reçu: {data.get('uid', 'Non spécifié')}")
-                            # Stocker quand même l'UID
-                            with app.app_context():
-                                new_sensor_data = SensorData(
-                                    sensor_id=1,
-                                    value=f"UID: {data.get('uid', 'Non spécifié')}"[:255]
-                                )
-                                db.session.add(new_sensor_data)
-                                db.session.commit()
+                                # Déboguer l'objet créé
+                                print(f"Objet SensorData créé: {new_sensor_data}")
+                                
+                                try:
+                                    # Ajout explicite à la session
+                                    db.session.add(new_sensor_data)
+                                    # Commit explicite pour forcer la sauvegarde
+                                    db.session.commit()
+                                    print(f"✅ Données sauvegardées avec succès! ID: {new_sensor_data.id if hasattr(new_sensor_data, 'id') else 'inconnu'}")
+                                except Exception as e:
+                                    # Rollback en cas d'erreur
+                                    db.session.rollback()
+                                    print(f"❌ ERREUR de sauvegarde dans la base: {str(e)}")
+                        
                     else:
                         # Format non-JSON, probablement juste un UID
                         print(f"⚠️ Données non-JSON: {data_str}")

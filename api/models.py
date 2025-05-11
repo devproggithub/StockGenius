@@ -130,7 +130,7 @@ class SensorData(db.Model):
     __tablename__ = 'sensor_data'
     
     id = db.Column(db.Integer, primary_key=True)
-    sensor_id = db.Column(db.Integer, db.ForeignKey('sensors.id'), nullable=False)
+    sensor_id = db.Column(db.Integer, db.ForeignKey('sensors.id'), nullable=True)
     value = db.Column(db.String(255), nullable=False)
     saved_at = db.Column(db.DateTime, default=datetime.utcnow)
     
