@@ -4,7 +4,7 @@ import json
 import time
 
 # Configurez le port série (adapté à votre configuration)
-PORT = 'COM13'  # Changez selon votre port Arduino
+PORT = 'COM4'  # Changez selon votre port Arduino
 BAUD_RATE = 9600
 
 # URL de votre API Flask

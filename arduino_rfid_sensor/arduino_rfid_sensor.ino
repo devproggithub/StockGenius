@@ -10,7 +10,7 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 MFRC522::MIFARE_Key key;
 MFRC522::StatusCode status;
 HX711 scale;
-float calibration_factor = -375;
+float calibration_factor = 215.0;
 
 // Initialisation de la balance (si utilisée)
 float weight_grams = 0;

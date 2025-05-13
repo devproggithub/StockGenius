@@ -776,7 +776,7 @@ def generate_alerts_job():
    
 #CODE ARDUINO /////////////////////////////////////////////////////////////////////
 # Configuration du port série Arduino (à ajuster selon votre configuration)
-SERIAL_PORT = 'COM13'  # Changez selon votre port Arduino
+SERIAL_PORT = 'COM4'  # Changez selon votre port Arduino
 BAUD_RATE = 9600
 arduino_serial = None
 
@@ -827,132 +827,99 @@ def read_rfid_data():
                 if not data_str:
                     continue
                 
-                print(f"📡 Données reçues: {data_str}")
+                print(f"📡 Données reçues brutes: '{data_str}'")
                 
-                # Vérifier si les données contiennent "0111:PEINTURE:0"
-                if "0111:PEINTURE:0" in data_str:
-                    print(f"✅ Données correspondant au filtre trouvées: {data_str}")
-                    
-                    # Traiter les données RFID
-                    try:
-                        import json
-                        
-                        # Stocker dans la base de données
-                        with app.app_context():
-                            # Créer et ajouter une nouvelle entrée SensorData
-                            new_sensor_data = SensorData(
-                                value=data_str[:255]  # Limiter à 255 caractères
-                            )
-                            
-                            # Déboguer l'objet créé
-                            print(f"Objet SensorData créé: {new_sensor_data}")
-                            
-                            try:
-                                # Ajout explicite à la session
-                                db.session.add(new_sensor_data)
-                                # Commit explicite pour forcer la sauvegarde
-                                db.session.commit()
-                                print(f"✅ Données '0111:PEINTURE:0' sauvegardées avec succès! ID: {new_sensor_data.id if hasattr(new_sensor_data, 'id') else 'inconnu'}")
-                            except Exception as e:
-                                # Rollback en cas d'erreur
-                                db.session.rollback()
-                                print(f"❌ ERREUR de sauvegarde dans la base: {str(e)}")
-                                
-                    except Exception as e:
-                        print(f"❌ Erreur de traitement des données: {e}")
-                else:
-                    print(f"⏭️ Données ignorées car ne correspondent pas au filtre '0111:PEINTURE:0'")
-            
-            time.sleep(0.1)  # Pause pour éviter une utilisation CPU excessive
-            
-        except Exception as e:
-            print(f"❌ Erreur lors de la lecture RFID: {e}")
-            time.sleep(1)  # Attendre avant de réessayer
-    
-    while True:
-        try:
-            if arduino_serial and arduino_serial.is_open and arduino_serial.in_waiting:
-                # Lire une ligne depuis Arduino
-                data_str = arduino_serial.readline().decode('utf-8').strip()
-                
-                # Ignorer les lignes vides
-                if not data_str:
-                    continue
-                
-                print(f"📡 Données reçues: {data_str}")
-                
-                # Traiter les données RFID
                 try:
                     import json
                     
-                    # Essayer de parser en JSON si c'est au format JSON
-                    if data_str.startswith('{') and data_str.endswith('}'):
-                        data = json.loads(data_str)
+                    # Tenter d'extraire les données JSON
+                    try:
+                        data_json = json.loads(data_str)
+                        uid = data_json.get("uid", "")
                         
-                        # Vérifier s'il y a un UID et des données supplémentaires
-                        # Vérifier s'il y a un UID et des données supplémentaires
-                        if 'uid' in data and 'data' in data:
-                            uid = data['uid']
-                            card_data = data['data']
+                        # Débogage détaillé des données reçues
+                        print(f"🔍 Structure JSON complète: {json.dumps(data_json, indent=2)}")
+                        
+                        # Extraire et vérifier le poids explicitement
+                        raw_weight = None
+                        if "weight" in data_json:
+                            raw_weight = data_json["weight"]
+                            print(f"🔍 Poids trouvé directement: {raw_weight} (type: {type(raw_weight)})")
+                        elif isinstance(data_json.get("data"), dict) and "weight" in data_json["data"]:
+                            raw_weight = data_json["data"]["weight"]
+                            print(f"🔍 Poids trouvé dans data: {raw_weight} (type: {type(raw_weight)})")
+                        
+                        # Essayer de convertir le poids en float si c'est une chaîne
+                        weight = None
+                        if raw_weight is not None:
+                            try:
+                                weight_grams = raw_weight
+                                weight = round(weight_grams / 1000, 3)
+                                print(f"✅ Poids converti de {weight_grams}g à {weight}kg")
+                                print(f"✅ Poids converti avec succès: {weight}")
+                            except (ValueError, TypeError):
+                                print(f"⚠️ Impossible de convertir le poids en nombre: {raw_weight}")
+                        
+                    except json.JSONDecodeError as json_err:
+                        print(f"⚠️ Erreur de décodage JSON: {json_err}")
+                        uid = data_str
+                        weight = None
+                    
+                    # Traiter les données dans le contexte de l'application
+                    with app.app_context():
+                        # Vérifier si une entrée similaire existe dans les 5 dernières minutes
+                        five_min_ago = datetime.utcnow() - timedelta(minutes=5)
+                        
+                        # Rechercher un enregistrement récent avec le même uid
+                        existing_record = SensorData.query.filter(
+                            SensorData.value.like(f"%{uid}%"),
+                            SensorData.saved_at >= five_min_ago
+                        ).order_by(SensorData.saved_at.desc()).first()
+                        
+                        if existing_record and uid:  # Vérifier que uid n'est pas vide
+                            # Afficher l'enregistrement existant pour débogage
+                            print(f"🔍 Enregistrement existant trouvé: ID={existing_record.id}, Valeur={existing_record.value}")
                             
-                            print(f"✅ UID: {uid}")
-                            print(f"✅ Données de la carte: {card_data}")
-                            
-                            # Stocker dans la base de données
-                            with app.app_context():
-                                # Si card_data est un objet, le convertir en string limité à 255 caractères
-                                if isinstance(card_data, dict):
-                                    print(card_data)  
-                                    value_str = json.dumps(card_data)[:255]  # Limiter à 255 caractères
-                                else:
-                                    print(f"✅ Données de la carte elseeeee: {card_data}")
-                                    value_str = str(card_data)[:255]
+                            # Mettre à jour uniquement le poids de l'enregistrement existant
+                            try:
+                                existing_data = json.loads(existing_record.value)
                                 
-                                # Déboguer avant la sauvegarde
-                                print(f"Type de value_str: {type(value_str)}, Contenu: {value_str}")
+                                # Sauvegarder l'ancien poids pour comparaison
+                                old_weight = None
+                                if "weight" in existing_data:
+                                    old_weight = existing_data["weight"]
+                                elif isinstance(existing_data.get("data"), dict) and "weight" in existing_data["data"]:
+                                    old_weight = existing_data["data"]["weight"]
                                 
-                                # Créer et ajouter une nouvelle entrée SensorData
-                                new_sensor_data = SensorData(
-                                    #sensor_id=1,  # ID du capteur RFID
-                                    value=value_str
-                                )
-                                
-                                # Déboguer l'objet créé
-                                print(f"Objet SensorData créé: {new_sensor_data}")
-                                
-                                try:
-                                    # Ajout explicite à la session
-                                    db.session.add(new_sensor_data)
-                                    # Commit explicite pour forcer la sauvegarde
+                                # Mettre à jour le poids seulement s'il est différent
+                                if weight is not None and weight != old_weight:
+                                    # Mettre à jour selon la structure
+                                    if "weight" in existing_data:
+                                        existing_data["weight"] = weight
+                                    elif isinstance(existing_data.get("data"), dict):
+                                        existing_data["data"]["weight"] = weight
+                                    
+                                    # Sauvegarder les données mises à jour
+                                    existing_record.value = json.dumps(existing_data)[:255]
                                     db.session.commit()
-                                    print(f"✅ Données sauvegardées avec succès! ID: {new_sensor_data.id if hasattr(new_sensor_data, 'id') else 'inconnu'}")
-                                except Exception as e:
-                                    # Rollback en cas d'erreur
-                                    db.session.rollback()
-                                    print(f"❌ ERREUR de sauvegarde dans la base: {str(e)}")
-                        
-                    else:
-                        # Format non-JSON, probablement juste un UID
-                        print(f"⚠️ Données non-JSON: {data_str}")
-                        with app.app_context():
+                                    print(f"✅ Poids mis à jour: {old_weight} -> {weight} pour l'ID: {existing_record.id}")
+                                else:
+                                    print(f"ℹ️ Pas de mise à jour nécessaire, poids inchangé: {weight}")
+                            except Exception as update_err:
+                                print(f"❌ Erreur lors de la mise à jour: {update_err}")
+                        else:
+                            # Créer un nouvel enregistrement
                             new_sensor_data = SensorData(
-                                sensor_id=1,
-                                value=data_str[:255]
+                                value=data_str[:255],  # Limiter à 255 caractères
+                                stored=False
                             )
                             db.session.add(new_sensor_data)
                             db.session.commit()
-                
-                except json.JSONDecodeError as je:
-                    print(f"❌ Erreur de décodage JSON: {je}")
-                    # Stocker les données brutes
-                    with app.app_context():
-                        new_sensor_data = SensorData(
-                            sensor_id=1,
-                            value=data_str[:255]
-                        )
-                        db.session.add(new_sensor_data)
-                        db.session.commit()
+                            print(f"✅ Nouvel enregistrement créé avec succès! ID: {new_sensor_data.id}")
                 except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    db.session.rollback()
                     print(f"❌ Erreur de traitement des données: {e}")
             
             time.sleep(0.1)  # Pause pour éviter une utilisation CPU excessive
@@ -1209,12 +1176,12 @@ api_bp = Blueprint('api', __name__)
 @api_bp.route('/last_sensor_data', methods=['GET'])
 def get_last_sensor_data():
     """
-    Endpoint API pour récupérer les dernières données de capteur contenant "0111:PEINTURE:0"
+    Endpoint API pour récupérer les dernières données de capteur qui n'a pas encore été traitée (stored=False)
     """
     try:
-        # Récupérer la dernière entrée contenant "0111:PEINTURE:0"
+        # Récupérer la dernière entrée qui n'a pas encore été traitée (stored=False)
         last_data = SensorData.query.filter(
-            SensorData.value.like('%0111:PEINTURE:0%')
+            SensorData.stored == False
         ).order_by(SensorData.saved_at.desc()).first()
         
         if last_data:

@@ -133,6 +133,7 @@ class SensorData(db.Model):
     sensor_id = db.Column(db.Integer, db.ForeignKey('sensors.id'), nullable=True)
     value = db.Column(db.String(255), nullable=False)
     saved_at = db.Column(db.DateTime, default=datetime.utcnow)
+    stored = db.Column(db.Boolean, default=False)
     
     
     def __repr__(self):
