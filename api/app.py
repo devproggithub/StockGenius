@@ -1,4 +1,5 @@
 # app.py
+import requests
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from models import db, User, Product, Category, Zone, Inventory, Sensor, SensorData,Customer, Alert, Order, OrderPrediction
@@ -226,7 +227,11 @@ def get_customers():
             'name': customer.name,
             'email': customer.email,
             'phone': customer.phone,
-            'address': customer.address
+            'address': customer.address,
+            'city': customer.city,
+            'added_at': customer.added_at,
+            'added_by': customer.added_by,
+            'customer_type':customer.customer_type
         })
     return jsonify(result), 200
 
@@ -235,6 +240,9 @@ def get_customers():
 @jwt_required()
 def create_customer():
     data = request.get_json()
+    # Récupérer l'ID utilisateur depuis le JWT
+    current_user_id = get_jwt_identity()
+    print(f"✅ Connected user is : {current_user_id}")
     if not data.get('name') or not data.get('email'):
         return jsonify({'error': 'Le nom et l\'email sont obligatoires'}), 400
 
@@ -245,7 +253,11 @@ def create_customer():
         name=data['name'],
         email=data['email'],
         phone=data.get('phone'),
-        address=data.get('address')
+        address=data.get('address'),
+        city=data.get('city'),
+        added_at=data.get('added_date'),
+        added_by=current_user_id,
+        customer_type=data.get('clientType')
     )
     db.session.add(new_customer)
     db.session.commit()
@@ -423,6 +435,77 @@ def create_product():
         }
     }), 201
 
+
+# Version simplifiée pour déboguer
+@app.route('/api/analyze-product', methods=['POST'])
+def analyze_product():
+    try:
+        data = request.json
+        product_name = data.get('productName', '')
+        
+        # Imprimer des informations de débogage
+        print(f"Produit à analyser: {product_name}")
+        
+        # Vérifier la clé API - masquer une partie pour la sécurité
+        api_key = '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'  # Votre clé API
+        print(f"Utilisation de la clé API: {api_key[:10]}...{api_key[-4:]}")
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'x-api-key': api_key,
+            'anthropic-version': '2023-06-01'
+        }
+        
+        payload = {
+            'model': 'claude-3-haiku-20240307',
+            'max_tokens': 300,
+            'messages': [
+                {
+                    'role': 'user',
+                    'content': f"Analyse la rentabilité potentielle de ce produit sur le marché marocain: {product_name}. Réponds UNIQUEMENT en format JSON avec cette structure exacte: {{\"isProfitable\": true/false, \"confidenceScore\": 0.XX, \"reason\": \"Ton explication\"}}"
+                }
+            ]
+        }
+        
+        print("Envoi de la requête à l'API Anthropic...")
+        response = requests.post(
+            'https://api.anthropic.com/v1/messages', 
+            headers=headers, 
+            json=payload,
+            timeout=15
+        )
+        
+        print(f"Statut de la réponse: {response.status_code}")
+        
+        # Retourner une réponse simplifiée pour déboguer
+        if response.status_code != 200:
+            print(f"Erreur API: {response.text}")
+            return jsonify({
+                "error": "Erreur API",
+                "details": response.text,
+                "status": response.status_code
+            }), 500
+        
+        claude_response = response.json()
+        print(f"Réponse reçue: {claude_response}")
+        
+        # Retourner une réponse simplifiée
+        return jsonify({
+            "isProfitable": True,
+            "confidenceScore": 0.8,
+            "reason": "Test de débogage - veuillez ignorer cette réponse"
+        })
+        
+    except Exception as e:
+        print(f"Exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Erreur serveur",
+            "message": str(e)
+        }), 500
+
+
 # Routes pour les catégories
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
@@ -462,15 +545,40 @@ def create_category():
 @jwt_required()
 def delete_product(product_id):
     # Vérifier si le produit existe
-    product = Product.query.get(product_id)
-    if not product:
-        return jsonify({'error': 'Produit non trouvé'}), 404
+    product = db.session.get(Product, product_id)
+    print(f"✅ Produit avant suppression : {product}")
     
-    # Supprimer le produit
-    db.session.delete(product)
-    db.session.commit()
+    if product is None:
+        return jsonify({"error": "Product not found"}), 404
     
-    return jsonify({'message': 'Produit supprimé avec succès'}), 200
+    try:
+        # Supprimer d'abord les enregistrements associés
+        inv_count = Inventory.query.filter_by(product_id=product_id).delete()
+        order_count = Order.query.filter_by(product_id=product_id).delete()
+        alert_count = Alert.query.filter_by(product_id=product_id).delete()
+        
+        print(f"✅ Supprimé: {inv_count} inventaires, {order_count} commandes, {alert_count} alertes")
+        
+        # Vérifier s'il existe d'autres références à ce produit
+        # Ajoutez ici d'autres tables qui pourraient référencer products
+        
+        # Supprimer le produit
+        db.session.delete(product)
+        db.session.commit()
+        
+        # Vérification post-suppression
+        check_product = db.session.get(Product, product_id)
+        if check_product is None:
+            print(f"✅ Produit {product_id} correctement supprimé")
+        else:
+            print(f"❌ Produit {product_id} toujours présent après suppression!")
+            
+        return jsonify({"message": "Produit supprimé avec succès"}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur lors de la suppression: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 #Modifier un Produit
 @app.route('/api/products/<int:product_id>', methods=['PUT'])
 @jwt_required()
