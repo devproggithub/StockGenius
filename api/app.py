@@ -447,7 +447,7 @@ def analyze_product():
         print(f"Produit à analyser: {product_name}")
         
         # Vérifier la clé API - masquer une partie pour la sécurité
-        api_key = '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'  # Votre clé API
+        api_key = '___'  # Votre clé API
         print(f"Utilisation de la clé API: {api_key[:10]}...{api_key[-4:]}")
         
         headers = {
