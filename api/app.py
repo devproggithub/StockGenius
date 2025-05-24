@@ -18,6 +18,12 @@ import serial
 import threading
 from flask import jsonify, request
 import time
+from prediction import prediction_bp
+from zone_rfid import zonerfid_bp
+
+# Importation du nouveau blueprint des étagères
+from shelves import shelves_bp
+
 
 # Initialisation de l'application
 app = Flask(__name__)
@@ -36,6 +42,14 @@ app.config['SECRET_KEY'] = 'KEY00155'  # Important pour la sécurité
 
 # Initialisation de la base de données avec l'application
 db.init_app(app)
+# Enregistrez vos blueprints
+app.register_blueprint(prediction_bp)
+
+# Enregistrez vos blueprints
+app.register_blueprint(zonerfid_bp)
+
+# Enregistrement du blueprint des étagères
+app.register_blueprint(shelves_bp, url_prefix='/api')
 
 # Route pour créer les tables dans la base de données 
 @app.route('/init-db')
@@ -1336,7 +1350,7 @@ def handle_options(path):
     return '', 200
 
 # Lancement de l'application
-if __name__ == '__main__':
+"""if __name__ == '__main__':
      with app.app_context():
         generate_all_alerts()  # Première exécution immédiate
         start_scheduler()      # Démarrage du scheduler toutes les 7 secondes
@@ -1345,6 +1359,25 @@ if __name__ == '__main__':
             rfid_thread = threading.Thread(target=read_rfid_data, daemon=True)
             rfid_thread.start()
             print("✅ Lecteur RFID démarré")
+        app.run(debug=True)"""
+
+if __name__ == '__main__':
+    with app.app_context():
+        generate_all_alerts()  # Première exécution immédiate
+        start_scheduler()      # Démarrer le scheduler toutes les 7 secondes
+        
+        # Initialiser les lecteurs RFID
+        try:
+            # Lecteur RFID d'entrée
+            if init_arduino_serial():
+                rfid_thread = threading.Thread(target=read_rfid_data, daemon=True)
+                rfid_thread.start()
+                print("✅ Lecteur RFID d'entrée démarré")
+                
+            # Nous ne démarrons pas automatiquement le lecteur de zone - il sera démarré via l'API
+        except Exception as e:
+            print(f"❌ Erreur d'initialisation RFID: {e}")
+            
         app.run(debug=True)
 
 
